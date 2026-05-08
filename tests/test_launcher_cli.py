@@ -9,6 +9,24 @@ from codex_session_delete.launcher import build_codex_command, launch_codex_app,
 class FakeServer:
     port = 57321
 
+    def __init__(self):
+        self.shutdown_called = False
+        self.server_close_called = False
+
+    def shutdown(self):
+        self.shutdown_called = True
+
+    def server_close(self):
+        self.server_close_called = True
+
+
+class FakeProcess:
+    def __init__(self):
+        self.waited = False
+
+    def wait(self):
+        self.waited = True
+
 
 def test_launch_codex_windows_adds_remote_debugging_port(monkeypatch):
     app_dir = Path("C:/Codex/app")
@@ -80,6 +98,21 @@ def test_launch_uses_packaged_activation_for_windowsapps(monkeypatch):
     assert launched == []
 
 
+def test_windows_port_selector_uses_ephemeral_port_when_default_is_busy(monkeypatch):
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    monkeypatch.setattr(launcher, "_can_bind_loopback_port", lambda port: port != 9229)
+    monkeypatch.setattr(launcher, "_find_available_loopback_port", lambda: 43001)
+
+    assert launcher.select_windows_loopback_port(9229) == 43001
+
+
+def test_non_windows_port_selector_keeps_requested_port(monkeypatch):
+    monkeypatch.setattr(launcher.sys, "platform", "darwin")
+    monkeypatch.setattr(launcher, "_can_bind_loopback_port", lambda port: False)
+
+    assert launcher.select_windows_loopback_port(9229) == 9229
+
+
 def test_cli_keeps_helper_server_alive_after_injection(monkeypatch):
     waited = []
     monkeypatch.setattr(cli, "launch_and_inject", lambda *args: (FakeServer(), None))
@@ -149,6 +182,32 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
     assert len(attempts) == 2
 
 
+def test_launch_and_inject_returns_windows_packaged_process_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
+    monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
+    monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: 1234)
+    monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: {"result": {}})
+
+    server, proc = launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
+
+    assert server.port == 57321
+    assert proc == 1234
+
+
+def test_launch_and_inject_closes_helper_when_injection_fails(monkeypatch, tmp_path):
+    server = FakeServer()
+    monkeypatch.setattr(launcher, "resolve_codex_app_dir", lambda app_dir=None: tmp_path)
+    monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: server)
+    monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: 1234)
+    monkeypatch.setattr(launcher, "inject_with_retry", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("inject failed")))
+
+    with pytest.raises(RuntimeError, match="inject failed"):
+        launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
+
+    assert server.shutdown_called is True
+    assert server.server_close_called is True
+
+
 def test_launch_uses_resolved_app_dir(monkeypatch, tmp_path):
     launched = []
     mac_app = tmp_path / "Applications" / "OpenAI Codex.app"
@@ -199,3 +258,27 @@ def test_cli_logs_launch_failure_for_hidden_pythonw(monkeypatch, tmp_path):
         cli.main(["launch"])
 
     assert "inject failed" in log_path.read_text(encoding="utf-8")
+
+
+def test_wait_for_shutdown_waits_for_windows_process_id(monkeypatch):
+    server = FakeServer()
+    waited = []
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli, "wait_for_windows_process_id", lambda process_id: waited.append(process_id))
+
+    cli.wait_for_shutdown(server, 1234)
+
+    assert waited == [1234]
+    assert server.shutdown_called is True
+    assert server.server_close_called is True
+
+
+def test_wait_for_shutdown_waits_for_popen_like_process():
+    server = FakeServer()
+    proc = FakeProcess()
+
+    cli.wait_for_shutdown(server, proc)
+
+    assert proc.waited is True
+    assert server.shutdown_called is True
+    assert server.server_close_called is True

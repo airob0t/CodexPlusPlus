@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import traceback
 from pathlib import Path
 
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.installers import InstallOptions, install_codex_plus_plus, uninstall_codex_plus_plus
-from codex_session_delete.launcher import launch_and_inject
+from codex_session_delete.launcher import launch_and_inject, shutdown_helper
 
 
 def add_launch_arguments(parser: argparse.ArgumentParser) -> None:
@@ -55,9 +56,35 @@ def log_launch_failure(exc: BaseException) -> None:
     path.write_text("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), encoding="utf-8")
 
 
+def wait_for_windows_process_id(process_id: int) -> None:
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    synchronize = 0x00100000
+    infinite = 0xFFFFFFFF
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+
+    handle = kernel32.OpenProcess(synchronize, False, process_id)
+    if not handle:
+        return
+    try:
+        kernel32.WaitForSingleObject(handle, infinite)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def wait_for_shutdown(server: HelperServer, codex_proc) -> None:
     try:
-        if codex_proc is None:
+        if isinstance(codex_proc, int):
+            wait_for_windows_process_id(codex_proc)
+        elif codex_proc is None and sys.platform == "darwin":
             import subprocess as _sp
             import time as _time
             while True:
@@ -65,12 +92,12 @@ def wait_for_shutdown(server: HelperServer, codex_proc) -> None:
                 if result.returncode != 0:
                     break
                 _time.sleep(2)
-        else:
+        elif codex_proc is not None:
             codex_proc.wait()
     except KeyboardInterrupt:
         pass
     finally:
-        server.shutdown()
+        shutdown_helper(server)
 
 
 def run_launch(args: argparse.Namespace) -> int:

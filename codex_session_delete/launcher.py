@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import socket
 import subprocess
 import sys
 import threading
@@ -44,6 +45,33 @@ class ApiFirstDeleteService:
 
 class InjectedHelperServer(HelperServer):
     bridge_socket: Any = None
+
+
+def _can_bind_loopback_port(port: int) -> bool:
+    if port == 0:
+        return True
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            probe.bind(("127.0.0.1", port))
+            return True
+    except OSError:
+        return False
+
+
+def _find_available_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def select_windows_loopback_port(requested_port: int) -> int:
+    if sys.platform != "win32" or _can_bind_loopback_port(requested_port):
+        return requested_port
+    return _find_available_loopback_port()
 
 
 def build_codex_arguments(debug_port: int) -> list[str]:
@@ -154,15 +182,14 @@ def activate_packaged_app(app_user_model_id: str, arguments: str) -> int:
             ole32.CoUninitialize()
 
 
-def launch_codex_app(app_dir: Path, debug_port: int) -> int | None:
+def launch_codex_app(app_dir: Path, debug_port: int) -> Any:
     app_user_model_id = packaged_app_user_model_id(app_dir) if sys.platform == "win32" else None
     if app_user_model_id:
         return activate_packaged_app(app_user_model_id, subprocess.list2cmdline(build_codex_arguments(debug_port)))
     if app_dir.suffix == ".app":
         subprocess.run(["open", "-a", str(app_dir), "--args", *build_codex_arguments(debug_port)], check=True)
         return None
-    subprocess.Popen(build_codex_command(app_dir, debug_port))
-    return None
+    return subprocess.Popen(build_codex_command(app_dir, debug_port))
 
 
 def start_helper(service, host: str = "127.0.0.1", port: int = 57321) -> HelperServer:
@@ -170,6 +197,11 @@ def start_helper(service, host: str = "127.0.0.1", port: int = 57321) -> HelperS
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
+
+
+def shutdown_helper(server: HelperServer) -> None:
+    server.shutdown()
+    server.server_close()
 
 
 def inject_with_retry(debug_port: int, script_path: Path, helper_port: int, service: ApiFirstDeleteService, attempts: int = 20, delay: float = 0.5) -> Any:
@@ -185,16 +217,23 @@ def inject_with_retry(debug_port: int, script_path: Path, helper_port: int, serv
     raise RuntimeError("Codex injection failed")
 
 
-def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Path, debug_port: int, helper_port: int) -> tuple[HelperServer, None]:
+def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Path, debug_port: int, helper_port: int) -> tuple[HelperServer, Any]:
     resolved_app_dir = resolve_codex_app_dir(app_dir)
     if resolved_app_dir is None:
         raise RuntimeError("Codex App directory not found")
+    debug_port = select_windows_loopback_port(debug_port)
+    helper_port = select_windows_loopback_port(helper_port)
     service = ApiFirstDeleteService(UnavailableApiAdapter(), db_path, backup_dir)
     server = start_helper(service, port=helper_port)
-    launch_codex_app(resolved_app_dir, debug_port)
-    script_path = Path(__file__).parent / "inject" / "renderer-inject.js"
-    server.bridge_socket = inject_with_retry(debug_port, script_path, server.port, service)
-    return server, None
+    codex_proc = None
+    try:
+        codex_proc = launch_codex_app(resolved_app_dir, debug_port)
+        script_path = Path(__file__).parent / "inject" / "renderer-inject.js"
+        server.bridge_socket = inject_with_retry(debug_port, script_path, server.port, service)
+        return server, codex_proc
+    except Exception:
+        shutdown_helper(server)
+        raise
 
 
 def handle_bridge_request(service: ApiFirstDeleteService, path: str, payload: dict[str, object]) -> dict[str, object]:
