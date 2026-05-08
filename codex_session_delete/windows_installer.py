@@ -63,7 +63,7 @@ $UninstallKey = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\
 $UninstallCommand = 'cmd.exe /c cd /d "' + $ProjectRoot + '" && "' + $Python + '" -m codex_session_delete uninstall --install-root "' + $InstallRoot + '"'
 New-Item -Path $UninstallKey -Force | Out-Null
 Set-ItemProperty -Path $UninstallKey -Name DisplayName -Value 'Codex++'
-Set-ItemProperty -Path $UninstallKey -Name DisplayVersion -Value '0.1.0'
+Set-ItemProperty -Path $UninstallKey -Name DisplayVersion -Value '1.0.1'
 Set-ItemProperty -Path $UninstallKey -Name Publisher -Value 'BigPizzaV3'
 Set-ItemProperty -Path $UninstallKey -Name DisplayIcon -Value $CodexIcon
 Set-ItemProperty -Path $UninstallKey -Name InstallLocation -Value $ProjectRoot

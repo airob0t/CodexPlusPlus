@@ -6,7 +6,7 @@
   const codexPlusMenuId = "codex-plus-menu";
   const codexDeleteVersion = "5";
   const codexArchiveDeleteAllVersion = "2";
-  const codexPlusVersion = "1.0.0";
+  const codexPlusVersion = "1.0.1";
   const codexPlusSettingsKey = "codexPlusSettings";
 
   function installStyle() {
