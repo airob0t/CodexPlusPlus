@@ -1,7 +1,7 @@
 import json
-import websocket
 
 from codex_session_delete.cdp import BRIDGE_BINDING_NAME, _bridge_loop, build_bridge_script, list_targets, pick_page_target
+from codex_session_delete.cdp import WebSocketTimeoutException
 
 
 class TimeoutThenMessageSocket:
@@ -12,7 +12,7 @@ class TimeoutThenMessageSocket:
     def recv(self):
         self.recv_count += 1
         if self.recv_count == 1:
-            raise websocket.WebSocketTimeoutException("idle")
+            raise WebSocketTimeoutException("idle")
         if self.recv_count == 2:
             return json.dumps({
                 "method": "Runtime.bindingCalled",
@@ -37,27 +37,25 @@ def test_list_targets_bypasses_proxy_environment(monkeypatch):
     seen = {}
 
     class FakeResponse:
-        def raise_for_status(self):
-            pass
+        def read(self):
+            return b'[{"type":"page"}]'
 
-        def json(self):
-            return [{"type": "page"}]
+        def __enter__(self):
+            return self
 
-    class FakeSession:
-        def __init__(self):
-            self.trust_env = True
+        def __exit__(self, *args):
+            return False
 
-        def get(self, url, timeout):
-            seen["trust_env"] = self.trust_env
+    class FakeOpener:
+        def open(self, url, timeout):
             seen["url"] = url
             seen["timeout"] = timeout
             return FakeResponse()
 
-    monkeypatch.setattr("codex_session_delete.cdp.requests.Session", FakeSession)
+    monkeypatch.setattr("codex_session_delete.cdp.build_opener", lambda *args, **kwargs: FakeOpener())
 
     assert list_targets(9229) == [{"type": "page"}]
     assert seen == {
-        "trust_env": False,
         "url": "http://127.0.0.1:9229/json",
         "timeout": 3,
     }

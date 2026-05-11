@@ -10,15 +10,13 @@ echo ========================================
 echo.
 echo [1] Install Codex++
 echo [2] Uninstall Codex++
-echo [3] Update Codex++
-echo [4] Exit
+echo [3] Exit
 echo.
-set /p choice=Please select an option [1-4]:
+set /p choice=Please select an option [1-3]:
 
 if "%choice%"=="1" goto install
 if "%choice%"=="2" goto uninstall
-if "%choice%"=="3" goto update
-if "%choice%"=="4" goto end
+if "%choice%"=="3" goto end
 
 echo.
 echo Invalid choice.
@@ -47,16 +45,6 @@ python -m codex_session_delete remove
 if errorlevel 1 goto error
 echo.
 echo Codex++ uninstalled successfully.
-pause
-goto end
-
-:update
-echo.
-echo Updating Codex++ from GitHub Release...
-python -m codex_session_delete update
-if errorlevel 1 goto error
-echo.
-echo Codex++ update finished.
 pause
 goto end
 

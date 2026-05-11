@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Protocol
-
-import requests
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
 
@@ -21,14 +22,19 @@ class ConfirmedHttpDeleteAdapter:
         self.delete_url = delete_url
 
     def delete(self, session: SessionRef) -> DeleteResult | None:
-        response = requests.post(
+        request = Request(
             self.delete_url,
-            json={"session_id": session.session_id, "title": session.title},
-            timeout=5,
+            data=json.dumps({"session_id": session.session_id, "title": session.title}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
+        try:
+            with urlopen(request, timeout=5):
+                pass
+        except HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise
         return DeleteResult(
             DeleteStatus.SERVER_DELETED,
             session.session_id,

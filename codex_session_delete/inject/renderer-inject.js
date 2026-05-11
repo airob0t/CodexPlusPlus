@@ -205,18 +205,20 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, nativeMenuPlacement: true };
+    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: false, nativeMenuPlacement: true };
   }
 
   function codexPlusSettings() {
     try {
-      return { ...defaultCodexPlusSettings(), ...JSON.parse(localStorage.getItem(codexPlusSettingsKey) || "{}") };
+      const stored = JSON.parse(localStorage.getItem(codexPlusSettingsKey) || "{}");
+      return { ...defaultCodexPlusSettings(), ...stored, sessionDelete: false };
     } catch {
       return defaultCodexPlusSettings();
     }
   }
 
   function setCodexPlusSetting(key, value) {
+    if (key === "sessionDelete") value = false;
     const next = { ...codexPlusSettings(), [key]: value };
     localStorage.setItem(codexPlusSettingsKey, JSON.stringify(next));
     renderCodexPlusMenu();
@@ -251,7 +253,7 @@
             <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
           </div>
           <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">会话删除</div><div class="codex-plus-row-description">在会话列表悬停显示删除按钮，并支持撤销。</div></div>
+            <div><div class="codex-plus-row-title">会话删除（已屏蔽）</div><div class="codex-plus-row-description">删除按钮、撤销和归档删除入口已禁用。</div></div>
             <button type="button" class="codex-plus-toggle" data-codex-plus-setting="sessionDelete"><span></span></button>
           </div>
           <div class="codex-plus-row">

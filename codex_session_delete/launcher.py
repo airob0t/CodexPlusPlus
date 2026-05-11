@@ -19,12 +19,18 @@ from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
 from codex_session_delete.storage_adapter import SQLiteStorageAdapter
 
 
+SESSION_DELETE_ENABLED = False
+
+
 class ApiFirstDeleteService:
-    def __init__(self, api_adapter: ApiAdapter, db_path: Path | None, backup_dir: Path):
+    def __init__(self, api_adapter: ApiAdapter, db_path: Path | None, backup_dir: Path, *, session_delete_enabled: bool = True):
         self.api_adapter = api_adapter
         self.local_adapter = SQLiteStorageAdapter(db_path, BackupStore(backup_dir)) if db_path else None
+        self.session_delete_enabled = session_delete_enabled
 
     def delete(self, session: SessionRef) -> DeleteResult:
+        if not self.session_delete_enabled:
+            return DeleteResult(DeleteStatus.FAILED, session.session_id, "会话删除功能已禁用")
         api_result = self.api_adapter.delete(session)
         if api_result is not None:
             return api_result
@@ -33,11 +39,15 @@ class ApiFirstDeleteService:
         return self.local_adapter.delete_local(session)
 
     def undo(self, token: str) -> DeleteResult:
+        if not self.session_delete_enabled:
+            return DeleteResult(DeleteStatus.FAILED, "", "会话删除功能已禁用", undo_token=token)
         if self.local_adapter is None:
             return DeleteResult(DeleteStatus.FAILED, "", "No local backup adapter configured", undo_token=token)
         return self.local_adapter.undo(token)
 
     def find_archived_thread_by_title(self, title: str) -> SessionRef | None:
+        if not self.session_delete_enabled:
+            return None
         if self.local_adapter is None:
             return None
         return self.local_adapter.find_archived_thread_by_title(title)
@@ -223,7 +233,7 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
         raise RuntimeError("Codex App directory not found")
     debug_port = select_windows_loopback_port(debug_port)
     helper_port = select_windows_loopback_port(helper_port)
-    service = ApiFirstDeleteService(UnavailableApiAdapter(), db_path, backup_dir)
+    service = ApiFirstDeleteService(UnavailableApiAdapter(), db_path, backup_dir, session_delete_enabled=SESSION_DELETE_ENABLED)
     server = start_helper(service, port=helper_port)
     codex_proc = None
     try:

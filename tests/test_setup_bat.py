@@ -7,9 +7,9 @@ def test_setup_bat_offers_install_and_uninstall_choices():
     assert "Codex++" in text
     assert "[1]" in text and "install" in text.lower()
     assert "[2]" in text and "uninstall" in text.lower()
-    assert "[3]" in text and "update" in text.lower()
+    assert "[3]" in text and "exit" in text.lower()
     assert "python -m pip install -e ." in text
     assert "python -m codex_session_delete setup" in text
     assert "python -m codex_session_delete remove" in text
-    assert "python -m codex_session_delete update" in text
+    assert "python -m codex_session_delete update" not in text
     assert "pause" in text.lower()

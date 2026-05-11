@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import plistlib
 import shlex
 import shutil
 import stat
@@ -43,19 +42,24 @@ def install_macos_app(options: "InstallOptions") -> None:
     macos.mkdir(parents=True, exist_ok=True)
     resources.mkdir(parents=True, exist_ok=True)
 
-    plist = {
-        "CFBundleName": "Codex++",
-        "CFBundleDisplayName": "Codex++",
-        "CFBundleIdentifier": "com.bigpizzav3.codexplusplus",
-        "CFBundleVersion": __version__,
-        "CFBundleShortVersionString": __version__,
-        "CFBundlePackageType": "APPL",
-        "CFBundleExecutable": EXECUTABLE_NAME,
-        "CFBundleIconFile": "codex-plus-plus.png",
-        "LSUIElement": True,
-        "LSMinimumSystemVersion": "12.0",
-    }
-    (contents / "Info.plist").write_bytes(plistlib.dumps(plist))
+    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Codex++</string>
+  <key>CFBundleDisplayName</key><string>Codex++</string>
+  <key>CFBundleIdentifier</key><string>com.bigpizzav3.codexplusplus</string>
+  <key>CFBundleVersion</key><string>{__version__}</string>
+  <key>CFBundleShortVersionString</key><string>{__version__}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>{EXECUTABLE_NAME}</string>
+  <key>CFBundleIconFile</key><string>codex-plus-plus.png</string>
+  <key>LSUIElement</key><true/>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+</dict>
+</plist>
+"""
+    (contents / "Info.plist").write_text(plist, encoding="utf-8")
 
     executable = macos / EXECUTABLE_NAME
     executable.write_text(f"#!/bin/sh\nexec {_launcher_command(options)}\n", encoding="utf-8")
